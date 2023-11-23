@@ -19,8 +19,6 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
     let opts = Opts::from_derive_input(&input).expect("Wrong options");
 
-    println!("{:?}", opts);
-
     let client_name = opts
         .client
         .unwrap_or(syn::Ident::new("Client", proc_macro2::Span::call_site()));
@@ -59,8 +57,9 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
     let get_list_method_name = format_ident!("get_{}", lower_plural);
     let get_list_input_name = format_ident!("Get{}Input", title_plural);
+    let get_list_where_name = format_ident!("Get{}Where", title_plural);
 
-    let get_list_input_fields = fields.iter().map(|field| {
+    let get_list_where_fields = fields.iter().map(|field| {
         let field_name = &field.ident;
         let field_type = &field.ty;
         quote! {
@@ -97,22 +96,29 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         #[builder(pattern = "owned")]
         pub struct #create_input_name {
             #(#create_input_fields),*
-            // #[builder(setter(strip_option), default)]
-            // pub description: Option<String>,
-            // #[builder(setter(strip_option), default)]
-            // pub due_date: Option<chrono::DateTime<chrono::Utc>>,
-            // #[builder(setter(strip_option), default)]
-            // pub project_id: Option<uuid::Uuid>,
-            // #[builder(setter(strip_option), default)]
-            // pub lead_id: Option<uuid::Uuid>,
-            // #[builder(setter(strip_option), default)]
-            // pub parent_id: Option<uuid::Uuid>,
         }
 
         #[derive(Default, derive_builder::Builder)]
         #[builder(pattern = "owned")]
         pub struct #get_list_input_name {
-            #(#get_list_input_fields),*
+            #[builder(setter(strip_option), default)]
+            pub filter: Option<#get_list_where_name>,
+
+            #[builder(setter(strip_option), default)]
+            pub sort_by: Option<String>,
+            // #[builder(setter(strip_option), default)]
+            // pub sort_order: Option<SortOrder>,
+
+            #[builder(setter(into, strip_option), default = "Some(100)")]
+            pub limit: Option<i32>,
+            #[builder(setter(into, strip_option), default = "Some(0)")]
+            pub offset: Option<i32>,
+        }
+
+        #[derive(Default, derive_builder::Builder)]
+        #[builder(pattern = "owned")]
+        pub struct #get_list_where_name {
+            #(#get_list_where_fields),*
         }
 
         #[derive(Default, derive_builder::Builder)]
