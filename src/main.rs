@@ -27,6 +27,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let client = Client::new().await;
 
+    client.prelude().await?;
+
     let cake = client
         .create_cake(CreateCakeInput {
             id: 1,
@@ -48,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 struct Client {
-    _pool: PgPool,
+    pool: PgPool,
 }
 
 impl Client {
@@ -61,6 +63,48 @@ impl Client {
             .await
             .expect("Failed to connect to Postgres");
 
-        Self { _pool: pool }
+        Self { pool }
     }
+
+    async fn prelude(&self) -> Result<(), Box<dyn Error>> {
+        let schema = "public";
+
+        let tables = sqlx::query!("SELECT table_name, column_name, is_nullable, data_type FROM INFORMATION_SCHEMA.COLUMNS where table_schema = $1 order by table_name, column_name", schema)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| TableColumnDefinition {
+                table_name: row.table_name.clone().unwrap(),
+                column_name: row.column_name.clone().unwrap(),
+                nullable: match row.is_nullable.clone().unwrap().as_str() {
+                    "YES" => true,
+                    "NO" => false,
+                    _ => panic!("Unexpected value for is_nullable"),
+                },
+                data_type: row.data_type.clone().unwrap(),
+            })
+            .collect::<Vec<TableColumnDefinition>>();
+
+        let mut db_context = String::new();
+
+        tables.iter().for_each(|table| {
+            db_context.push_str(
+                format!(
+                    "{}: {} | {} [{}]",
+                    table.table_name, table.column_name, table.data_type, table.nullable
+                )
+                .as_str(),
+            );
+        });
+
+        Ok(())
+    }
+}
+
+pub(crate) struct TableColumnDefinition {
+    pub(crate) table_name: String,
+    pub(crate) column_name: String,
+    pub(crate) nullable: bool,
+    pub(crate) data_type: String,
 }

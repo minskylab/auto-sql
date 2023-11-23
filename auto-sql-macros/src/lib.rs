@@ -1,23 +1,8 @@
-// pub fn add(left: usize, right: usize) -> usize {
-//     left + right
-// }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn it_works() {
-//         let result = add(2, 2);
-//         assert_eq!(result, 4);
-//     }
-// }
-
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
 
 use proc_macro2::Ident;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use syn::{parse_macro_input, DeriveInput};
 
 #[derive(Debug, FromDeriveInput, Default)]
@@ -53,7 +38,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
     let lower_singular = ty_name.to_string().to_lowercase();
     let lower_plural = format!("{}s", lower_singular);
 
-    let title_singular = capitalize(lower_singular.as_str());
+    let title_singular = lower_singular.capitalize();
     let title_plural = format!("{}s", title_singular);
 
     let crud_operations_trait_name = format_ident!("{}CrudOperations", title_singular);
@@ -70,20 +55,42 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         }
     });
 
-    // Build the output, possibly using quasi-quotation
-    let expanded = quote! {
+    let get_method_name = format_ident!("get_{}", lower_singular);
+
+    let get_list_method_name = format_ident!("get_{}", lower_plural);
+    let get_list_input_name = format_ident!("Get{}Input", title_plural);
+
+    let get_list_input_fields = fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let field_type = &field.ty;
+        quote! {
+            #[builder(setter(strip_option), default)]
+            pub #field_name: Option<#field_type>
+        }
+    });
+
+    let update_method_name = format_ident!("update_{}", lower_singular);
+    let update_input_name = format_ident!("Update{}Input", title_singular);
+
+    let update_input_fields = fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let field_type = &field.ty;
+        quote! {
+            #[builder(setter(strip_option), default)]
+            pub #field_name: Option<#field_type>
+        }
+    });
+
+    let delete_method_name = format_ident!("delete_{}", lower_singular);
+
+    let token_stream = quote! {
         #[async_trait::async_trait]
         pub trait #crud_operations_trait_name {
             async fn #create_method_name(&self, input: #create_input_name) -> Result<#ty_name, Box<dyn std::error::Error>>;
-            // async fn get_{#lower_singular}(&self, id: Uuid) -> Result<{#title_singular}, Box<dyn Error>>;
-            // async fn get_{#lower_plural}(&self, input: Option<Get{#title_plural}Input>)
-            //     -> Result<Vec<{#title_singular}>, Box<dyn Error>>;
-            // async fn update_{#lower_singular}(
-            //     &self,
-            //     id: Uuid,
-            //     input: Update{#title_singular}Input,
-            // ) -> Result<{#title_singular}, Box<dyn Error>>;
-            // async fn delete_{#lower_singular}(&self, id: Uuid) -> Result<{#title_singular}, Box<dyn Error>>;
+            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>>;
+            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#ty_name>, Box<dyn std::error::Error>>;
+            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#ty_name, Box<dyn std::error::Error>>;
+            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>>;
         }
 
         #[derive(Default, derive_builder::Builder)]
@@ -102,31 +109,59 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
             // pub parent_id: Option<uuid::Uuid>,
         }
 
+        #[derive(Default, derive_builder::Builder)]
+        #[builder(pattern = "owned")]
+        pub struct #get_list_input_name {
+            #(#get_list_input_fields),*
+        }
+
+        #[derive(Default, derive_builder::Builder)]
+        #[builder(pattern = "owned")]
+        pub struct #update_input_name {
+            #(#update_input_fields),*
+        }
+
         #[async_trait::async_trait]
         impl #crud_operations_trait_name for #client_name {
-            // #[auto_rust::auto_implement]
             async fn #create_method_name(&self, input: #create_input_name) -> Result<#ty_name, Box<dyn std::error::Error>> {
-                // let query = format!("INSERT INTO {} (name) VALUES ($1) RETURNING *", #lower_plural);
-                // let row = sqlx::query_as::<_, #ty_name>(query.as_str())
-                //     .bind(input.name)
-                //     .fetch_one(&self.pool)
-                //     .await?;
+                todo!()
+            }
 
-                // Ok(row)
+            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>> {
+                todo!()
+            }
+
+            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#ty_name>, Box<dyn std::error::Error>> {
+                todo!()
+            }
+
+            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#ty_name, Box<dyn std::error::Error>> {
+                todo!()
+            }
+
+            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>> {
                 todo!()
             }
         }
     };
 
+    let expanded = token_stream;
+
     // Hand the output tokens back to the compiler
     TokenStream::from(expanded)
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+trait Capitalizer {
+    fn capitalize(&self) -> String;
+}
+
+impl Capitalizer for String {
+    fn capitalize(&self) -> String {
+        let mut c = self.chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        }
     }
 }
 
