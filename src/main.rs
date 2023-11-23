@@ -1,10 +1,10 @@
-use std::env::var;
+use std::{env::var, error::Error};
 
 use auto_sql_macros::AutoSQL;
-use sqlx::{postgres::PgPoolOptions, Connection, Row};
-// use std::slice::SliceIndex;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
-#[derive(AutoSQL)]
+#[derive(Debug, AutoSQL)]
+#[auto_sql(client = "Client")]
 pub struct Cake {
     pub id: i32,
     pub name: String,
@@ -12,7 +12,7 @@ pub struct Cake {
     pub fruits: Vec<Fruit>,
 }
 
-#[derive(AutoSQL)]
+#[derive(Debug, AutoSQL)]
 pub struct Fruit {
     pub id: i32,
     pub name: String,
@@ -22,43 +22,45 @@ pub struct Fruit {
 }
 
 #[tokio::main]
-async fn main() {
-    println!("Hello, world!");
-
+async fn main() -> Result<(), Box<dyn Error>> {
     dotenv::dotenv().ok();
 
-    let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let client = Client::new().await;
 
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(database_url.as_str())
-        .await
-        .unwrap();
+    let cake = client
+        .create_cake(CreateCakeInput {
+            id: 1,
+            name: "Hello".to_string(),
+            fruits: vec![],
+        })
+        .await?;
 
-    let schema = "public";
+    client
+        .create_fruit(
+            CreateFruitInputBuilder::default()
+                .name("Apple".to_string())
+                .build()?,
+        )
+        .await?;
+    println!("{:?}", cake);
 
-    let tables = sqlx::query!("SELECT table_name, column_name, is_nullable, data_type FROM INFORMATION_SCHEMA.COLUMNS where table_schema = $1 order by table_name, column_name", schema).fetch_all(&pool).await.unwrap().iter().map(|row| TableColumnDefinition {
-        table_name: row.table_name.clone().unwrap(),
-        column_name: row.column_name.clone().unwrap(),
-        nullable: match row.is_nullable.clone().unwrap().as_str() {
-            "YES" => true,
-            "NO" => false,
-            _ => panic!("Unexpected value for is_nullable"),
-        },
-        data_type: row.data_type.clone().unwrap(),
-    }).collect::<Vec<TableColumnDefinition>>();
-
-    tables.iter().for_each(|table| {
-        println!(
-            "{}: {} | {} [{}]",
-            table.table_name, table.column_name, table.data_type, table.nullable
-        );
-    });
+    Ok(())
 }
 
-pub(crate) struct TableColumnDefinition {
-    pub(crate) table_name: String,
-    pub(crate) column_name: String,
-    pub(crate) nullable: bool,
-    pub(crate) data_type: String,
+struct Client {
+    _pool: PgPool,
+}
+
+impl Client {
+    async fn new() -> Self {
+        let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .expect("Failed to connect to Postgres");
+
+        Self { _pool: pool }
+    }
 }
