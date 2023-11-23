@@ -26,3 +26,6 @@ sqlx = { version = "0.7.2", features = [
     "runtime-tokio-native-tls",
 ] }
 auto-sql-macros = { path = "auto-sql-macros" }
+tokio = { version = "1.34.0", features = ["full"] }
+dotenv = "0.15.0"
+auto-rust = "0.1.3"
