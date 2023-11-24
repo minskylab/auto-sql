@@ -1,3 +1,4 @@
+// use commons::introspective::Introspective;
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
 
@@ -16,6 +17,8 @@ struct Opts {
 #[proc_macro_derive(AutoSQL, attributes(auto_sql))]
 pub fn auto_sql(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+
+    // let a = Introspective::introspect();
 
     let opts = Opts::from_derive_input(&input).expect("Wrong options");
 
@@ -147,6 +150,12 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
             async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>> {
                 todo!()
+            }
+        }
+
+        impl #ty_name {
+            pub async fn digest<C:  auto_sql::commons::Introspective>(&self, client: &C) {
+                client.introspect().await.unwrap();
             }
         }
     };

@@ -1,5 +1,7 @@
 use std::{env::var, error::Error};
 
+use async_trait::async_trait;
+use auto_sql::commons::Introspective;
 use auto_sql_macros::AutoSQL;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -27,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let client = Client::new().await;
 
-    client.prelude().await?;
+    // client.introspect().await?;
 
     let cake = client
         .create_cake(CreateCakeInput {
@@ -36,6 +38,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             fruits: vec![],
         })
         .await?;
+
+    let a = cake.digest(&client).await;
 
     client
         .create_fruit(
@@ -65,11 +69,49 @@ impl Client {
 
         Self { pool }
     }
+}
 
-    async fn prelude(&self) -> Result<(), Box<dyn Error>> {
+#[async_trait]
+impl Introspective for Client {
+    async fn introspect(&self) -> Result<(), Box<dyn Error>> {
         let schema = "public";
 
         let tables = sqlx::query!("SELECT table_name, column_name, is_nullable, data_type FROM INFORMATION_SCHEMA.COLUMNS where table_schema = $1 order by table_name, column_name", schema)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| TableColumnDefinition {
+                table_name: row.table_name.clone().unwrap(),
+                column_name: row.column_name.clone().unwrap(),
+                nullable: match row.is_nullable.clone().unwrap().as_str() {
+                    "YES" => true,
+                    "NO" => false,
+                    _ => panic!("Unexpected value for is_nullable"),
+                },
+                data_type: row.data_type.clone().unwrap(),
+            })
+            .collect::<Vec<TableColumnDefinition>>();
+
+        let mut db_context = String::new();
+
+        tables.iter().for_each(|table| {
+            db_context.push_str(
+                format!(
+                    "{}: {} | {} [{}]",
+                    table.table_name, table.column_name, table.data_type, table.nullable
+                )
+                .as_str(),
+            );
+        });
+
+        Ok(())
+    }
+
+    async fn introspect_table(&self, table_name: &str) -> Result<(), Box<dyn Error>> {
+        let schema = "public";
+
+        let tables = sqlx::query!("SELECT table_name, column_name, is_nullable, data_type FROM INFORMATION_SCHEMA.COLUMNS where table_schema = $1 and table_name = $2 order by table_name, column_name", schema, table_name)
             .fetch_all(&self.pool)
             .await
             .unwrap()
