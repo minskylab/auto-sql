@@ -96,6 +96,7 @@ dependencies = [
  "derive_builder",
  "dotenv",
  "sqlx",
+ "syn 2.0.39",
  "tokio",
  "uuid",
 ]
