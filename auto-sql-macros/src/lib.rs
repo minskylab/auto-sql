@@ -11,7 +11,6 @@ use syn::{parse_macro_input, DeriveInput};
 struct Opts {
     relation: Option<String>,
     client: Option<Ident>,
-    // prefix: Option<String>,
 }
 
 #[proc_macro_derive(AutoSQL, attributes(auto_sql))]
@@ -34,9 +33,9 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         _ => panic!("Only structs with named fields are supported"),
     };
 
-    let ty_name = input.ident;
+    let type_name = input.ident;
 
-    let lower_singular = ty_name.to_string().to_lowercase();
+    let lower_singular = type_name.to_string().to_lowercase();
     let lower_plural = format!("{}s", lower_singular);
 
     let title_singular = lower_singular.capitalize();
@@ -85,14 +84,32 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
     let delete_method_name = format_ident!("delete_{}", lower_singular);
 
+    let sql_table_fields = fields
+        .iter()
+        .map(|field| {
+            let field_name = &field.ident;
+            let field_type = &field.ty;
+
+            let sql_type = syn_type_to_sql_type(field_type);
+
+            format!("{} {}", field_name.as_ref().unwrap(), sql_type)
+        })
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    let sql_table = format!(
+        "CREATE TABLE IF NOT EXISTS {} ({})",
+        type_name, sql_table_fields
+    );
+
     let token_stream = quote! {
         #[async_trait::async_trait]
         pub trait #crud_operations_trait_name {
-            async fn #create_method_name(&self, input: #create_input_name) -> Result<#ty_name, Box<dyn std::error::Error>>;
-            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>>;
-            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#ty_name>, Box<dyn std::error::Error>>;
-            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#ty_name, Box<dyn std::error::Error>>;
-            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>>;
+            async fn #create_method_name(&self, input: #create_input_name) -> Result<#type_name, Box<dyn std::error::Error>>;
+            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#type_name, Box<dyn std::error::Error>>;
+            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#type_name>, Box<dyn std::error::Error>>;
+            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#type_name, Box<dyn std::error::Error>>;
+            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#type_name, Box<dyn std::error::Error>>;
         }
 
         #[derive(Default, derive_builder::Builder)]
@@ -132,30 +149,42 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
         #[async_trait::async_trait]
         impl #crud_operations_trait_name for #client_name {
-            async fn #create_method_name(&self, input: #create_input_name) -> Result<#ty_name, Box<dyn std::error::Error>> {
+            async fn #create_method_name(&self, input: #create_input_name) -> Result<#type_name, Box<dyn std::error::Error>> {
                 todo!()
             }
 
-            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>> {
+            async fn #get_method_name(&self, id: uuid::Uuid) -> Result<#type_name, Box<dyn std::error::Error>> {
                 todo!()
             }
 
-            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#ty_name>, Box<dyn std::error::Error>> {
+            async fn #get_list_method_name(&self, input: Option<#get_list_input_name>) -> Result<Vec<#type_name>, Box<dyn std::error::Error>> {
                 todo!()
             }
 
-            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#ty_name, Box<dyn std::error::Error>> {
+            async fn #update_method_name(&self, id: uuid::Uuid, input: #update_input_name) -> Result<#type_name, Box<dyn std::error::Error>> {
                 todo!()
             }
 
-            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#ty_name, Box<dyn std::error::Error>> {
+            async fn #delete_method_name(&self, id: uuid::Uuid) -> Result<#type_name, Box<dyn std::error::Error>> {
                 todo!()
             }
         }
 
-        impl #ty_name {
+        impl #type_name {
             pub async fn digest<C:  auto_sql::commons::Introspective>(&self, client: &C) {
                 client.introspect().await.unwrap();
+            }
+        }
+
+        impl auto_sql::commons::AsSQLArtifacts for #type_name {
+            fn as_sql_artifacts() -> Vec<auto_sql::commons::SQLArtifact> {
+                vec![
+                    auto_sql::commons::SQLArtifact {
+                        kind: auto_sql::commons::SQLArtifactKind::Table,
+                        name: stringify!(#type_name).to_string(),
+                        sql: stringify!(#sql_table).to_string(),
+                    }
+                ]
             }
         }
     };
@@ -180,37 +209,24 @@ impl Capitalizer for String {
     }
 }
 
-// let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set");
+fn syn_type_to_sql_type(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(syn::TypePath {
+            path: syn::Path { segments, .. },
+            ..
+        }) => {
+            let segment = segments.first().unwrap();
+            let ident = &segment.ident;
 
-//     let pool = PgPoolOptions::new()
-//         .max_connections(5)
-//         .connect(database_url.as_str())
-//         .await
-//         .unwrap();
-
-//     let schema = "public";
-
-//     let tables = sqlx::query!("SELECT table_name, column_name, is_nullable, data_type FROM INFORMATION_SCHEMA.COLUMNS where table_schema = $1 order by table_name, column_name", schema).fetch_all(&pool).await.unwrap().iter().map(|row| TableColumnDefinition {
-//         table_name: row.table_name.clone().unwrap(),
-//         column_name: row.column_name.clone().unwrap(),
-//         nullable: match row.is_nullable.clone().unwrap().as_str() {
-//             "YES" => true,
-//             "NO" => false,
-//             _ => panic!("Unexpected value for is_nullable"),
-//         },
-//         data_type: row.data_type.clone().unwrap(),
-//     }).collect::<Vec<TableColumnDefinition>>();
-
-//     tables.iter().for_each(|table| {
-//         println!(
-//             "{}: {} | {} [{}]",
-//             table.table_name, table.column_name, table.data_type, table.nullable
-//         );
-//     });
-
-// pub(crate) struct TableColumnDefinition {
-//     pub(crate) table_name: String,
-//     pub(crate) column_name: String,
-//     pub(crate) nullable: bool,
-//     pub(crate) data_type: String,
-// }
+            match ident.to_string().as_str() {
+                "String" => "TEXT".to_string(),
+                "i32" => "INTEGER".to_string(),
+                "bool" => "BOOLEAN".to_string(),
+                "f64" => "DOUBLE PRECISION".to_string(),
+                "DateTime<Utc>" => "TIMESTAMP WITH TIME ZONE".to_string(),
+                _ => panic!("Unsupported type"),
+            }
+        }
+        _ => panic!("Unsupported type"),
+    }
+}

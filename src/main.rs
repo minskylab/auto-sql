@@ -1,7 +1,7 @@
 use std::{env::var, error::Error};
 
 use async_trait::async_trait;
-use auto_sql::commons::Introspective;
+use auto_sql::commons::{AsSQLArtifacts, Introspective};
 use auto_sql_macros::AutoSQL;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -10,17 +10,15 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct Cake {
     pub id: i32,
     pub name: String,
-
-    pub fruits: Vec<Fruit>,
+    // pub fruits: Vec<Fruit>,
 }
 
 #[derive(Debug, AutoSQL)]
 pub struct Fruit {
     pub id: i32,
     pub name: String,
-
-    #[auto_sql(relation = "fruits")]
-    pub cakes: Vec<Cake>,
+    // #[auto_sql(relation = "fruits")]
+    // pub cakes: Vec<Cake>,
 }
 
 #[tokio::main]
@@ -29,26 +27,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let client = Client::new().await;
 
-    // client.introspect().await?;
+    let artifacts = Cake::as_sql_artifacts();
 
-    let cake = client
-        .create_cake(CreateCakeInput {
-            id: 1,
-            name: "Hello".to_string(),
-            fruits: vec![],
-        })
-        .await?;
+    artifacts.iter().for_each(|artifact| {
+        println!("{:?}", artifact);
+    });
 
-    let a = cake.digest(&client).await;
+    // let cake = client
+    //     .create_cake(CreateCakeInput {
+    //         id: 1,
+    //         name: "Hello".to_string(),
+    //         fruits: vec![],
+    //     })
+    //     .await?;
 
-    client
-        .create_fruit(
-            CreateFruitInputBuilder::default()
-                .name("Apple".to_string())
-                .build()?,
-        )
-        .await?;
-    println!("{:?}", cake);
+    // client
+    //     .create_fruit(
+    //         CreateFruitInputBuilder::default()
+    //             .name("Apple".to_string())
+    //             .build()?,
+    //     )
+    //     .await?;
+    // println!("{:?}", cake);
 
     Ok(())
 }
