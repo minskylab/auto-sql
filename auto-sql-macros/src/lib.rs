@@ -86,6 +86,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
     let sql_table_fields = fields
         .iter()
+        .filter(|field| !is_relation_field(&field.ty))
         .map(|field| {
             let field_name = &field.ident;
             let field_type = &field.ty;
@@ -182,7 +183,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
                     auto_sql::commons::SQLArtifact {
                         kind: auto_sql::commons::SQLArtifactKind::Table,
                         name: stringify!(#type_name).to_string(),
-                        sql: stringify!(#sql_table).to_string(),
+                        sql: #sql_table.to_string(),
                     }
                 ]
             }
@@ -228,5 +229,23 @@ fn syn_type_to_sql_type(ty: &syn::Type) -> String {
             }
         }
         _ => panic!("Unsupported type"),
+    }
+}
+
+fn is_relation_field(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(syn::TypePath {
+            path: syn::Path { segments, .. },
+            ..
+        }) => {
+            let segment = segments.first().unwrap();
+            let ident = &segment.ident;
+
+            match ident.to_string().as_str() {
+                "Vec" => true,
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }

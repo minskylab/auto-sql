@@ -10,7 +10,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct Cake {
     pub id: i32,
     pub name: String,
-    // pub fruits: Vec<Fruit>,
+    pub fruits: Vec<Fruit>,
 }
 
 #[derive(Debug, AutoSQL)]
