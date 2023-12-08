@@ -1,10 +1,9 @@
-// use commons::introspective::Introspective;
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
 
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, DeriveInput, Field};
 
 #[derive(Debug, FromDeriveInput, Default)]
 #[darling(default, attributes(auto_sql))]
@@ -33,6 +32,12 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         _ => panic!("Only structs with named fields are supported"),
     };
 
+    let (scalar_fields, relation_fields): (Vec<&Field>, Vec<&Field>) =
+        fields.iter().partition(|field| is_scalar(&field.ty));
+
+    println!("scalar_fields: {:?}", scalar_fields);
+    println!("relation_fields: {:?}", relation_fields);
+
     let type_name = input.ident;
 
     let lower_singular = type_name.to_string().to_lowercase();
@@ -46,7 +51,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
     let create_method_name = format_ident!("create_{}", lower_singular);
     let create_input_name = format_ident!("Create{}Input", title_singular);
 
-    let create_input_fields = fields.iter().map(|field| {
+    let create_input_fields = scalar_fields.iter().map(|field| {
         let field_name = &field.ident;
         let field_type = &field.ty;
         quote! {
@@ -61,7 +66,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
     let get_list_input_name = format_ident!("Get{}Input", title_plural);
     let get_list_where_name = format_ident!("Get{}Where", title_plural);
 
-    let get_list_where_fields = fields.iter().map(|field| {
+    let get_list_where_fields = scalar_fields.iter().map(|field| {
         let field_name = &field.ident;
         let field_type = &field.ty;
         quote! {
@@ -73,7 +78,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
     let update_method_name = format_ident!("update_{}", lower_singular);
     let update_input_name = format_ident!("Update{}Input", title_singular);
 
-    let update_input_fields = fields.iter().map(|field| {
+    let update_input_fields = scalar_fields.iter().map(|field| {
         let field_name = &field.ident;
         let field_type = &field.ty;
         quote! {
@@ -84,9 +89,8 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
 
     let delete_method_name = format_ident!("delete_{}", lower_singular);
 
-    let sql_table_fields = fields
+    let sql_table_fields = scalar_fields
         .iter()
-        .filter(|field| !is_relation_field(&field.ty))
         .map(|field| {
             let field_name = &field.ident;
             let field_type = &field.ty;
@@ -172,20 +176,49 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         }
 
         impl #type_name {
-            pub async fn digest<C:  auto_sql::commons::Introspective>(&self, client: &C) {
+            pub async fn digest<C:  auto_sql::representation::sql_artifacts::Introspective>(&self, client: &C) {
                 client.introspect().await.unwrap();
             }
         }
 
-        impl auto_sql::commons::AsSQLArtifacts for #type_name {
-            fn as_sql_artifacts() -> Vec<auto_sql::commons::SQLArtifact> {
+        impl auto_sql::representation::sql_artifacts::AsSQLArtifacts for #type_name {
+            fn as_sql_artifacts() -> Vec<auto_sql::representation::sql_artifacts::SQLArtifact> {
                 vec![
-                    auto_sql::commons::SQLArtifact {
-                        kind: auto_sql::commons::SQLArtifactKind::Table,
+                    auto_sql::representation::sql_artifacts::SQLArtifact {
+                        kind: auto_sql::representation::sql_artifacts::SQLArtifactKind::Table,
                         name: stringify!(#type_name).to_string(),
                         sql: #sql_table.to_string(),
                     }
                 ]
+            }
+        }
+
+        impl auto_sql::representation::intermediate::Representable for #type_name {
+            fn representation() -> auto_sql::representation::intermediate::Representation {
+                // todo!()
+                auto_sql::representation::intermediate::Representation {
+                    name: stringify!(#type_name).to_string(),
+                    scalars: vec![
+                        #(
+                            auto_sql::representation::intermediate::Scalar {
+                                name: stringify!(#scalar_fields).to_string(),
+                                data_type: "TEXT".to_string(),
+                                nullable: false,
+                            }
+                        ),*
+                    ],
+                    relations: vec![
+                        #(
+                            auto_sql::representation::intermediate::Relation {
+                                name: stringify!(#relation_fields).to_string(),
+                                nullable: false,
+                                to_table: stringify!(#relation_fields).to_string(),
+                                to_column: "id".to_string(),
+                            }
+                        ),*
+                    ],
+                    // relations: vec![],
+                }
             }
         }
     };
@@ -210,6 +243,24 @@ impl Capitalizer for String {
     }
 }
 
+fn is_scalar(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(syn::TypePath {
+            path: syn::Path { segments, .. },
+            ..
+        }) => {
+            let segment = segments.first().unwrap();
+            let ident = &segment.ident;
+
+            matches!(
+                ident.to_string().as_str(),
+                "String" | "i32" | "bool" | "f64" | "DateTime<Utc>" | "Uuid"
+            )
+        }
+        _ => false,
+    }
+}
+
 fn syn_type_to_sql_type(ty: &syn::Type) -> String {
     match ty {
         syn::Type::Path(syn::TypePath {
@@ -225,6 +276,7 @@ fn syn_type_to_sql_type(ty: &syn::Type) -> String {
                 "bool" => "BOOLEAN".to_string(),
                 "f64" => "DOUBLE PRECISION".to_string(),
                 "DateTime<Utc>" => "TIMESTAMP WITH TIME ZONE".to_string(),
+                "Uuid" => "UUID".to_string(),
                 _ => panic!("Unsupported type"),
             }
         }
@@ -241,10 +293,7 @@ fn is_relation_field(ty: &syn::Type) -> bool {
             let segment = segments.first().unwrap();
             let ident = &segment.ident;
 
-            match ident.to_string().as_str() {
-                "Vec" => true,
-                _ => false,
-            }
+            matches!(ident.to_string().as_str(), "Vec")
         }
         _ => false,
     }

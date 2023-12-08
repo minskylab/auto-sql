@@ -1,7 +1,11 @@
 use std::{env::var, error::Error};
 
 use async_trait::async_trait;
-use auto_sql::commons::{AsSQLArtifacts, Introspective};
+use auto_sql::representation::{
+    intermediate::Representable,
+    sql_artifacts::Introspective, // AsSQLArtifacts,
+};
+
 use auto_sql_macros::AutoSQL;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -10,28 +14,35 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct Cake {
     pub id: i32,
     pub name: String,
+
     pub fruits: Vec<Fruit>,
+    pub principal_fruit: Option<Fruit>,
 }
 
 #[derive(Debug, AutoSQL)]
 pub struct Fruit {
     pub id: i32,
     pub name: String,
-    // #[auto_sql(relation = "fruits")]
-    // pub cakes: Vec<Cake>,
+
+    #[auto_sql(relation = "fruits")]
+    pub cakes: Vec<Cake>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv::dotenv().ok();
 
-    let client = Client::new().await;
+    // let client = Client::new().await;
 
-    let artifacts = Cake::as_sql_artifacts();
+    // let artifacts = Cake::as_sql_artifacts();
 
-    artifacts.iter().for_each(|artifact| {
-        println!("{:?}", artifact);
-    });
+    // artifacts.iter().for_each(|artifact| {
+    //     println!("{:#?}", artifact);
+    // });
+
+    let rep = Cake::representation();
+
+    println!("{:#?}", rep);
 
     // let cake = client
     //     .create_cake(CreateCakeInput {
