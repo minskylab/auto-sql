@@ -16,7 +16,7 @@ pub struct Cake {
     pub name: String,
 
     pub fruits: Vec<Fruit>,
-    pub principal_fruit: Option<Fruit>,
+    pub principal_fruit: Fruit,
 }
 
 #[derive(Debug, AutoSQL)]

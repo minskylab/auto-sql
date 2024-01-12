@@ -15,6 +15,7 @@ pub struct Scalar {
 #[derive(Debug)]
 pub struct Relation {
     pub name: String,
+    pub multiple: bool,
     pub nullable: bool,
     pub to_table: String,
     pub to_column: String,

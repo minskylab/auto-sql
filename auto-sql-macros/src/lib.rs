@@ -35,8 +35,8 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
     let (scalar_fields, relation_fields): (Vec<&Field>, Vec<&Field>) =
         fields.iter().partition(|field| is_scalar(&field.ty));
 
-    println!("scalar_fields: {:?}", scalar_fields);
-    println!("relation_fields: {:?}", relation_fields);
+    // println!("scalar_fields: {:?}", scalar_fields);
+    // println!("relation_fields: {:?}", relation_fields);
 
     let type_name = input.ident;
 
@@ -106,6 +106,19 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
         "CREATE TABLE IF NOT EXISTS {} ({})",
         type_name, sql_table_fields
     );
+
+    // let is_vec = |ty: &syn::Type| match ty {
+    //     syn::Type::Path(syn::TypePath {
+    //         path: syn::Path { segments, .. },
+    //         ..
+    //     }) => {
+    //         let segment = segments.first().unwrap();
+    //         let ident = &segment.ident;
+
+    //         matches!(ident.to_string().as_str(), "Vec")
+    //     }
+    //     _ => false,
+    // };
 
     let token_stream = quote! {
         #[async_trait::async_trait]
@@ -211,6 +224,7 @@ pub fn auto_sql(input: TokenStream) -> TokenStream {
                         #(
                             auto_sql::representation::intermediate::Relation {
                                 name: stringify!(#relation_fields).to_string(),
+                                multiple: true,
                                 nullable: false,
                                 to_table: stringify!(#relation_fields).to_string(),
                                 to_column: "id".to_string(),
@@ -284,17 +298,17 @@ fn syn_type_to_sql_type(ty: &syn::Type) -> String {
     }
 }
 
-fn is_relation_field(ty: &syn::Type) -> bool {
-    match ty {
-        syn::Type::Path(syn::TypePath {
-            path: syn::Path { segments, .. },
-            ..
-        }) => {
-            let segment = segments.first().unwrap();
-            let ident = &segment.ident;
+// fn is_relation_field(ty: &syn::Type) -> bool {
+//     match ty {
+//         syn::Type::Path(syn::TypePath {
+//             path: syn::Path { segments, .. },
+//             ..
+//         }) => {
+//             let segment = segments.first().unwrap();
+//             let ident = &segment.ident;
 
-            matches!(ident.to_string().as_str(), "Vec")
-        }
-        _ => false,
-    }
-}
+//             matches!(ident.to_string().as_str(), "Vec")
+//         }
+//         _ => false,
+//     }
+// }
